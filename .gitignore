@@ -1,0 +1,19 @@
+# 数据文件
+data/
+!outputs/test_predictions.txt
+
+# 模型文件
+checkpoints/
+*.pt
+*.pth
+*.bin
+
+# 日志和缓存
+logs/
+__pycache__/
+*.pyc
+
+# 大文件
+*.zip
+*.pkl
+*.npy
