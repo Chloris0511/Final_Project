@@ -3,22 +3,17 @@ import json
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.optim import AdamW
+from torch.optim import Adam
 from tqdm import tqdm
 
-from datasets.text_dataset import TextDataset
-from models.text_model import BertTextClassifier
+from datasets.image_dataset import ImageDataset
+from models.image_model import ResNetImageClassifier
 from utils.metrics import compute_metrics
 from config.label_map import LABEL2ID
-from config.baseline_config import (
-    BERT_MODEL_NAME,
-    MAX_TEXT_LENGTH,
-    BATCH_SIZE,
-    LEARNING_RATE,
-    EPOCHS
-)
+from config.baseline_config import BATCH_SIZE, LEARNING_RATE, EPOCHS
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 def train_one_epoch(model, dataloader, optimizer, criterion, epoch, total_epochs):
     model.train()
@@ -33,36 +28,31 @@ def train_one_epoch(model, dataloader, optimizer, criterion, epoch, total_epochs
     for batch in progress_bar:
         optimizer.zero_grad()
 
-        input_ids = batch["input_ids"].to(DEVICE)
-        attention_mask = batch["attention_mask"].to(DEVICE)
+        images = batch["image"].to(DEVICE)
         labels = batch["label"].to(DEVICE)
 
-        logits = model(input_ids, attention_mask)
+        logits = model(images)
         loss = criterion(logits, labels)
 
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item()
-
-        progress_bar.set_postfix(
-            loss=f"{loss.item():.4f}"
-        )
+        progress_bar.set_postfix(loss=f"{loss.item():.4f}")
 
     return total_loss / len(dataloader)
 
+
 def validate(model, dataloader):
     model.eval()
-    all_preds = []
-    all_labels = []
+    all_preds, all_labels = [], []
 
     with torch.no_grad():
         for batch in dataloader:
-            input_ids = batch["input_ids"].to(DEVICE)
-            attention_mask = batch["attention_mask"].to(DEVICE)
+            images = batch["image"].to(DEVICE)
             labels = batch["label"].to(DEVICE)
 
-            logits = model(input_ids, attention_mask)
+            logits = model(images)
             preds = torch.argmax(logits, dim=1)
 
             all_preds.extend(preds.cpu().tolist())
@@ -70,22 +60,23 @@ def validate(model, dataloader):
 
     return all_labels, all_preds
 
+
 def main():
     
     os.makedirs("outputs/checkpoints", exist_ok=True)
     os.makedirs("outputs/metrics", exist_ok=True)
 
+    print("===== 开始训练 Image-only ResNet 模型 =====")
+
     # ===== Dataset =====
-    train_dataset = TextDataset(
+    train_dataset = ImageDataset(
         split_csv="data/processed/train_split.csv",
-        processed_root="data/processed/train",
-        max_length=MAX_TEXT_LENGTH
+        processed_root="data/processed/train"
     )
 
-    val_dataset = TextDataset(
+    val_dataset = ImageDataset(
         split_csv="data/processed/val_split.csv",
-        processed_root="data/processed/val",
-        max_length=MAX_TEXT_LENGTH
+        processed_root="data/processed/val"
     )
 
     train_loader = DataLoader(
@@ -101,17 +92,14 @@ def main():
     )
 
     # ===== Model =====
-    model = BertTextClassifier(
-        model_name=BERT_MODEL_NAME,
+    model = ResNetImageClassifier(
         num_labels=len(LABEL2ID)
     ).to(DEVICE)
 
-    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+    optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.CrossEntropyLoss()
 
     # ===== Training Loop =====
-    print("===== 开始训练 Text-only BERT 模型 =====")
-
     for epoch in range(EPOCHS):
         train_loss = train_one_epoch(
             model,
@@ -132,17 +120,21 @@ def main():
             f"Val Macro-F1: {metrics['macro_f1']:.4f}"
         )
 
+    # ===== Save =====
+    torch.save(
+        model.state_dict(),
+        "outputs/checkpoints/image_only.pt"
+    )
 
-    # ===== Save Model =====
-    torch.save(model.state_dict(), "outputs/checkpoints/text_only.pt")
-
-    # ===== Save Metrics =====
-    with open("outputs/metrics/text_only_metrics.json", "w", encoding="utf-8") as f:
+    with open(
+        "outputs/metrics/image_only_metrics.json",
+        "w",
+        encoding="utf-8"
+    ) as f:
         json.dump(metrics, f, indent=4)
 
-    print("Text-only baseline training completed.")
+    print("Image-only baseline training completed.")
+
 
 if __name__ == "__main__":
     main()
-
-# python -m scripts.train_text_only

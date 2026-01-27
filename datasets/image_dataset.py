@@ -6,10 +6,10 @@ from config.label_map import LABEL2ID
 
 class ImageDataset(Dataset):
     def __init__(self, split_csv, processed_root):
-        """
-        split_csv: data/processed/train_split.csv 或 val_split.csv
-        processed_root: data/processed/train 或 data/processed/val
-        """
+        
+        # split_csv: data/processed/train_split.csv 或 val_split.csv
+        # processed_root: data/processed/train 或 data/processed/val
+        
         self.samples = []
         self.processed_root = Path(processed_root)
 
