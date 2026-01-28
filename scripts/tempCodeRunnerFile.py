@@ -1,1 +1,0 @@
-print("===== 开始训练 Image-only ResNet 模型 =====")

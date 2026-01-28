@@ -1,110 +1,119 @@
-import torch
-from pathlib import Path
-from transformers import BertTokenizer
 import csv
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+from torchvision.models import resnet18
+from transformers import BertTokenizer, BertModel
+from tqdm import tqdm
 
 from models.multimodal_attention_model import AttentionFusionModel
-from config.label_map import ID2LABEL
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ===== 路径配置 =====
-TEST_GUID_FILE = "data/raw/test_without_label.txt"
-PROCESSED_TEST_ROOT = Path("data/processed/test")
-TEXT_DIR = PROCESSED_TEST_ROOT / "texts_cleaned"
-IMAGE_DIR = PROCESSED_TEST_ROOT / "images_processed"
+TEXT_DIR = Path("data/processed/test/texts_cleaned")
+IMAGE_DIR = Path("data/processed/test/images_processed")
+TEST_LIST = Path("data/raw/test_without_label.txt")
 
-MODEL_PATH = "outputs/checkpoints/attention_fusion.pt"
-OUTPUT_FILE = "outputs/test_predictions.csv"
+MODEL_CKPT = "outputs/checkpoints/attention_fusion.pt"
+OUT_PATH = "outputs/results/test_predictions.csv"
 
-BERT_MODEL_NAME = "bert-base-uncased"
 MAX_LEN = 128
 
+LABEL2ID = {
+    "negative": 0,
+    "neutral": 1,
+    "positive": 2
+}
+ID2LABEL = {v: k for k, v in LABEL2ID.items()}
 
+
+# 读取 test guid
 def load_test_guids(path):
     guids = []
     with open(path, "r", encoding="utf-8") as f:
+        next(f)  # 跳过表头 guid,tag
         for line in f:
-            line = line.strip()
-            if not line:
-                continue
-
-            # 跳过表头（如 guid,tag）
-            if line.lower().startswith("guid"):
-                continue
-
-            # 只取第一列
-            guid = line.split(",")[0].strip()
-            if guid:
-                guids.append(guid)
-
+            guid = line.strip().split(",")[0]
+            guids.append(guid)
     return guids
+
+
+
+# 主流程
 
 def main():
     print("===== 开始测试集预测 =====")
 
-    # 1. 读取 guid
-    guids = load_test_guids(TEST_GUID_FILE)
-    print(f"共读取 {len(guids)} 个测试样本")
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-    # 2. tokenizer
-    tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_NAME)
+    # 模型
+    text_encoder = BertModel.from_pretrained("bert-base-uncased")
+    image_encoder = resnet18(pretrained=True)
+    image_dim = image_encoder.fc.in_features
+    image_encoder.fc = nn.Identity()
 
-    # 3. 加载模型
-    model = AttentionFusionModel(num_labels=len(ID2LABEL))
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
-    model.to(DEVICE)
+
+    model = AttentionFusionModel(
+        text_encoder=text_encoder,
+        image_encoder=image_encoder,
+        text_dim=768,
+        image_dim=image_dim,
+        hidden_dim=256,
+        num_classes=len(ID2LABEL)
+    ).to(DEVICE)
+
+
+    model.load_state_dict(
+        torch.load(MODEL_CKPT, map_location=DEVICE)
+    )
     model.eval()
 
-    predictions = []
+    # 读取 guid
+    guids = load_test_guids(TEST_LIST)
+
+    results = []
 
     with torch.no_grad():
-        for guid in guids:
-            # --- 文本 ---
+        for guid in tqdm(guids, desc="Predicting"):
             text_path = TEXT_DIR / f"{guid}.txt"
-            if not text_path.exists():
-                raise FileNotFoundError(f"缺少文本文件: {text_path}")
+            image_path = IMAGE_DIR / f"{guid}.pt"
 
-            with open(text_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read().strip()
+            if not text_path.exists() or not image_path.exists():
+                print(f"[WARN] 缺失数据: {guid}")
+                continue
 
-            encoding = tokenizer(
+            # 文本
+            text = text_path.read_text(encoding="utf-8", errors="ignore")
+            encoded = tokenizer(
                 text,
                 truncation=True,
                 padding="max_length",
                 max_length=MAX_LEN,
                 return_tensors="pt"
             )
-            input_ids = encoding["input_ids"].to(DEVICE)
-            attention_mask = encoding["attention_mask"].to(DEVICE)
 
-            # --- 图像 ---
-            image_path = IMAGE_DIR / f"{guid}.pt"
-            if not image_path.exists():
-                raise FileNotFoundError(f"缺少图像文件: {image_path}")
+            # 图像
+            image = torch.load(image_path)
 
-            image = torch.load(image_path).unsqueeze(0).to(DEVICE)
-
-            # --- 前向 ---
             logits = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                image=image
+                encoded["input_ids"].to(DEVICE),
+                encoded["attention_mask"].to(DEVICE),
+                image.unsqueeze(0).to(DEVICE),
+                ablation=None
             )
 
-            pred_id = torch.argmax(logits, dim=1).item()
-            pred_label = ID2LABEL[pred_id]
+            pred = torch.argmax(logits, dim=1).item()
+            results.append([guid, ID2LABEL[pred]])
 
-            predictions.append((guid, pred_label))
-
-    # 4. 保存结果
-    Path("outputs").mkdir(exist_ok=True)
-    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+    # 保存
+    Path(OUT_PATH).parent.mkdir(parents=True, exist_ok=True)
+    with open(OUT_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["guid", "label"])
-        writer.writerows(predictions)
+        writer.writerows(results)
 
-    print(f"预测完成，结果已保存至: {OUTPUT_FILE}")
+    print(f"预测完成，保存至 {OUT_PATH}")
 
 
 if __name__ == "__main__":
