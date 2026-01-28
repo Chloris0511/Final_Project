@@ -59,6 +59,14 @@ project_root/
 |   ├── train_multimodal_ablation.py   # 消融实验脚本
 │   └── predict_test.py                # 测试集预测
 │
+├── config/
+|   ├── label_map.py                       # 标签映射表
+│   └── baseline_config.py                 # 模型与训练超参数配置
+│
+├── utils/
+│   ├── metrics.py                         # 评估指标计算
+│   └── result_logger.py                   # 训练日志工具
+|
 ├── outputs/
 │   ├── checkpoints/                   # 模型权重保存
 │   ├── metrics/
@@ -159,7 +167,6 @@ outputs/results/val_metrics.csv
 ## 六、参考资料
 ### GitHub 仓库参考
 https://github.com/imadhou/multimodal-sentiment-analysis
-https://github.com/facebookresearch/mmf
 
 ---
 
