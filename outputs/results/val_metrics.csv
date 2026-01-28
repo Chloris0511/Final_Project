@@ -1,0 +1,2 @@
+model,ablation,val_acc,val_macro_f1
+attention_fusion,multimodal,0.7125,0.5801
