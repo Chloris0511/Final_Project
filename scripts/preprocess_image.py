@@ -30,7 +30,6 @@ def process_split(split_name, transform):
         for row in reader:
             guid = row["guid"]
 
-            # ★ 关键修复：字符串 → Path
             img_path = Path(row["image_path"])
 
             if not img_path.exists():

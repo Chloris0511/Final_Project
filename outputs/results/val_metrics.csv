@@ -1,2 +1,5 @@
 model,ablation,val_acc,val_macro_f1
 attention_fusion,multimodal,0.7125,0.5801
+attention_fusion,multimodal,0.7050,0.5849
+attention_fusion,text,0.6975,0.5678
+attention_fusion,image,0.6250,0.5115
