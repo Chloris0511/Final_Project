@@ -60,7 +60,7 @@ project_root/
 │   └── predict_test.py                # 测试集预测
 │
 ├── config/
-|   ├── label_map.py                       # 标签转化
+|   ├── label_map.py                       # 标签映射表
 │   └── baseline_config.py                 # 模型与训练超参数配置
 │
 ├── utils/
